@@ -1,6 +1,8 @@
 <?php
 require_once '../includes/db_connect.php';
 require_once '../includes/auth_functions.php';
+
+session_start();
 require_once '../admin/admin_functions.php';
 
 session_start();
@@ -107,11 +109,24 @@ $pageTitle = "Админ-панель - Learn Programming";
                             </tr>
                         </thead>
                         <tbody>
+                            
+
+<?php $stmt = $pdo->prepare("
+                                        SELECT c.id, c.title, c.description, COUNT(l.id) AS lesson_count 
+                                        FROM courses c
+                                        LEFT JOIN lessons l ON l.course_id = c.id
+                                        GROUP BY c.id
+                                    ");
+                                    $stmt->execute();
+                                    $courses = $stmt->fetchAll(PDO::FETCH_ASSOC); 
+                                    foreach ($courses as $course)?>
                             <?php foreach (getRecentCourses(5) as $course): ?>
                             <tr>
                                 <td><?= $course['id'] ?></td>
                                 <td><?= htmlspecialchars($course['title']) ?></td>
-                                <td><?= $course['lesson_count'] ?></td>
+                                <td>
+                                    <?= $course['lesson_count'] ?? 0; ?>
+                                </td>
                                 <td>
                                     <span class="status-badge <?= $course['is_active'] ? 'active' : 'inactive' ?>">
                                         <?= $course['is_active'] ? 'Активен' : 'Неактивен' ?>

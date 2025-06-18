@@ -4,7 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo isset($pageTitle) ? $pageTitle : 'Learn Programming'; ?></title>
-    <link rel="stylesheet" href="/assets/css/style.css">
+    <link rel="stylesheet" href="/assets/css/main.css">
+<link rel="stylesheet" href="/assets/css/courses.css">
+<link rel="stylesheet" href="/assets/css/auth.css">
+<link rel="stylesheet" href="/assets/css/dashboard.css">
+<link rel="stylesheet" href="/assets/css/style.css">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="/assets/js/main.js" defer></script>
     <script src="/assets/js/api.js" defer></script>
@@ -15,7 +20,7 @@
             <div class="logo">
                 <a href="/index.php">
                     <i class="fas fa-code"></i>
-                    <span>LearnProgramming</span>
+                    <span>LearnCode</span>
                 </a>
             </div>
             
@@ -30,7 +35,6 @@
             <div class="user-actions">
                 <?php if (isset($_SESSION['user_id'])): ?>
                     <div class="user-profile">
-                        <span class="username"><?php echo htmlspecialchars($_SESSION['username']); ?></span>
                         <div class="xp-badge">
                             <i class="fas fa-star"></i>
                             <span>
@@ -43,6 +47,7 @@
                         <a href="/user/profile.php" class="profile-link">
                             <img src="/assets/images/avatars/<?php echo isset($_SESSION['profile_pic']) ? $_SESSION['profile_pic'] : 'default.jpg'; ?>" alt="Profile" class="profile-pic">
                         </a>
+                        <span class="username"><?php echo htmlspecialchars($_SESSION['username']); ?></span>
                         <a href="/user/logout.php" class="logout-btn"><i class="fas fa-sign-out-alt"></i></a>
                     </div>
                 <?php else: ?>
@@ -58,12 +63,6 @@
             </button>
         </div>
         
-        <?php if (isset($_SESSION['user_id'])): ?>
-        <div class="progress-bar">
-            <div class="progress" style="width: <?php echo isset($progressPercentage) ? $progressPercentage : '0'; ?>%"></div>
-            <span class="progress-text"><?php echo isset($progressPercentage) ? $progressPercentage : '0'; ?>% Complete</span>
-        </div>
-        <?php endif; ?>
+       
     </header>
 
-    <main class="main-content"></main>

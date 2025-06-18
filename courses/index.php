@@ -4,180 +4,189 @@ require_once '../includes/auth_functions.php';
 
 session_start();
 
-// Устанавливаем заголовок страницы
-$pageTitle = "All Courses - Learn Programming";
+// Получаем параметры фильтрации
+$difficulty = $_GET['difficulty'] ?? null;
+$search = $_GET['search'] ?? null;
 
-// Получаем список всех активных курсов
-$stmt = $pdo->prepare("SELECT * FROM courses WHERE is_active = TRUE ORDER BY created_at DESC");
-$stmt->execute();
-$courses = $stmt->fetchAll();
+// Подготавливаем SQL запрос с учетом фильтров
+$sql = "SELECT c.*, 
+       (SELECT COUNT(*) FROM lessons l WHERE l.course_id = c.id AND l.is_active = 1) as lesson_count,
+       (SELECT COUNT(DISTINCT up.user_id) FROM user_progress up WHERE up.course_id = c.id) as students_count
+        FROM courses c
+        WHERE c.is_active = 1";
 
-// Если пользователь авторизован, получаем его прогресс
-$userProgress = [];
-if (isset($_SESSION['user_id'])) {
-    $stmt = $pdo->prepare("SELECT course_id, COUNT(*) as completed_lessons 
-                          FROM user_progress 
-                          WHERE user_id = ? 
-                          GROUP BY course_id");
-    $stmt->execute([$_SESSION['user_id']]);
-    $progressData = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-    
-    // Получаем общее количество уроков для каждого курса
-    $stmt = $pdo->prepare("SELECT course_id, COUNT(*) as total_lessons 
-                          FROM lessons 
-                          GROUP BY course_id");
-    $stmt->execute();
-    $totalLessons = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-    
-    // Рассчитываем процент завершения для каждого курса
-    foreach ($courses as $course) {
-        $courseId = $course['id'];
-        $completed = $progressData[$courseId] ?? 0;
-        $total = $totalLessons[$courseId] ?? 1;
-        $userProgress[$courseId] = [
-            'completed' => $completed,
-            'total' => $total,
-            'percentage' => round(($completed / $total) * 100)
-        ];
+$params = [];
+
+if ($difficulty && in_array($difficulty, ['beginner', 'intermediate', 'advanced'])) {
+    $sql .= " AND c.difficulty = ?";
+    $params[] = $difficulty;
+}
+
+if ($search) {
+    $sql .= " AND (c.title LIKE ? OR c.description LIKE ?)";
+    $searchTerm = "%$search%";
+    $params[] = $searchTerm;
+    $params[] = $searchTerm;
+}
+
+$sql .= " ORDER BY c.created_at DESC";
+
+// Получаем курсы из базы данных
+try {
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $courses = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $courses = [];
+    error_log("Error fetching courses: " . $e->getMessage());
+}
+
+// Получаем прогресс пользователя (если авторизован)
+$user_progress = [];
+if (isLoggedIn()) {
+    $user_id = $_SESSION['user_id'];
+    try {
+        $stmt = $pdo->prepare("SELECT course_id, COUNT(*) as completed_lessons 
+                              FROM user_progress 
+                              WHERE user_id = ? 
+                              GROUP BY course_id");
+        $stmt->execute([$user_id]);
+        $user_progress = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+    } catch (PDOException $e) {
+        error_log("Error fetching user progress: " . $e->getMessage());
     }
 }
 
-// Подключаем header
+// Установка заголовка страницы
+$page_title = "Все курсы | LearnCode";
+
+// Подключение шапки
 include '../includes/header.php';
 ?>
 
-<div class="courses-page">
-    <div class="hero-section">
-        <div class="hero-content">
-            <h1>Start Your Coding Journey</h1>
-            <p>Learn programming with our interactive courses designed for beginners and advanced learners alike.</p>
-            
-            <?php if (!isset($_SESSION['user_id'])): ?>
-            <div class="hero-actions">
-                <a href="/user/register.php" class="btn btn-primary">Get Started</a>
-                <a href="/user/login.php" class="btn btn-outline">I Already Have an Account</a>
-            </div>
-            <?php endif; ?>
-        </div>
-        <div class="hero-image">
-            <img src="/assets/images/coding-hero.png" alt="Coding Illustration">
-        </div>
-    </div>
-
+<div class="courses-header bg-primary text-white py-5">
     <div class="container">
-        <div class="courses-header">
-            <h2>Available Courses</h2>
-            
-            <div class="filter-controls">
-                <div class="filter-group">
-                    <label for="difficulty-filter">Difficulty:</label>
-                    <select id="difficulty-filter" class="form-select">
-                        <option value="all">All Levels</option>
-                        <option value="beginner">Beginner</option>
-                        <option value="intermediate">Intermediate</option>
-                        <option value="advanced">Advanced</option>
-                    </select>
-                </div>
-                
-                <div class="search-box">
-                    <input type="text" id="course-search" placeholder="Search courses...">
-                    <button class="search-btn"><i class="fas fa-search"></i></button>
-                </div>
+        <h1 class="display-4 fw-bold mb-3">Все курсы</h1>
+        <p class="lead mb-4">Выберите курс для изучения и начните свой путь в программировании</p>
+        
+        <form method="GET" class="row g-3">
+            <div class="col-md-6">
+                <input type="text" name="search" class="form-control form-control-lg" 
+                       placeholder="Поиск курсов..." value="<?= htmlspecialchars($search ?? '') ?>">
             </div>
-        </div>
-
-        <div class="courses-grid" id="courses-container">
-            <?php foreach ($courses as $course): ?>
-            <div class="course-card" 
-                 data-difficulty="<?= $course['difficulty'] ?>" 
-                 data-title="<?= strtolower($course['title']) ?>">
-                <div class="course-badge"><?= ucfirst($course['difficulty']) ?></div>
-                
-                <div class="course-icon">
-                    <i class="fas <?= $course['icon'] ? $course['icon'] : 'fa-laptop-code' ?>"></i>
-                </div>
-                
-                <div class="course-info">
-                    <h3><?= htmlspecialchars($course['title']) ?></h3>
-                    <p class="course-description"><?= htmlspecialchars($course['description']) ?></p>
-                    
-                    <?php if (isset($_SESSION['user_id']) && isset($userProgress[$course['id']])): ?>
-                    <div class="progress-container">
-                        <div class="progress-info">
-                            <span><?= $userProgress[$course['id']]['completed'] ?>/<?= $userProgress[$course['id']]['total'] ?> lessons</span>
-                            <span><?= $userProgress[$course['id']]['percentage'] ?>%</span>
-                        </div>
-                        <div class="progress-bar">
-                            <div class="progress-fill" style="width: <?= $userProgress[$course['id']]['percentage'] ?>%"></div>
-                        </div>
-                    </div>
-                    <?php endif; ?>
-                </div>
-                
-                <div class="course-actions">
-                    <a href="course.php?id=<?= $course['id'] ?>" class="btn btn-course">
-                        <?= isset($userProgress[$course['id']]) ? 'Continue' : 'Start' ?>
-                    </a>
-                </div>
+            <div class="col-md-4">
+                <select name="difficulty" class="form-select form-select-lg">
+                    <option value="">Все уровни</option>
+                    <option value="beginner" <?= $difficulty === 'beginner' ? 'selected' : '' ?>>Начинающий</option>
+                    <option value="intermediate" <?= $difficulty === 'intermediate' ? 'selected' : '' ?>>Средний</option>
+                    <option value="advanced" <?= $difficulty === 'advanced' ? 'selected' : '' ?>>Продвинутый</option>
+                </select>
             </div>
-            <?php endforeach; ?>
-            
-            <?php if (empty($courses)): ?>
-            <div class="no-courses">
-                <i class="fas fa-book-open"></i>
-                <h3>No courses available at the moment</h3>
-                <p>Check back later or contact us for more information.</p>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-light btn-lg w-100">Найти</button>
             </div>
-            <?php endif; ?>
-        </div>
+        </form>
     </div>
 </div>
 
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Фильтрация курсов по сложности
-    const difficultyFilter = document.getElementById('difficulty-filter');
-    difficultyFilter.addEventListener('change', filterCourses);
-    
-    // Поиск курсов
-    const courseSearch = document.getElementById('course-search');
-    courseSearch.addEventListener('input', filterCourses);
-    
-    function filterCourses() {
-        const difficulty = difficultyFilter.value;
-        const searchTerm = courseSearch.value.toLowerCase();
-        const courseCards = document.querySelectorAll('.course-card');
-        
-        courseCards.forEach(card => {
-            const matchesDifficulty = difficulty === 'all' || card.dataset.difficulty === difficulty;
-            const matchesSearch = card.dataset.title.includes(searchTerm) || 
-                                 card.querySelector('.course-description').textContent.toLowerCase().includes(searchTerm);
-            
-            if (matchesDifficulty && matchesSearch) {
-                card.style.display = 'block';
-            } else {
-                card.style.display = 'none';
-            }
-        });
-    }
-    
-    // Анимация при наведении на карточки курсов
-    const courseCards = document.querySelectorAll('.course-card');
-    courseCards.forEach(card => {
-        card.addEventListener('mouseenter', () => {
-            card.style.transform = 'translateY(-5px)';
-            card.style.boxShadow = '0 10px 20px rgba(0,0,0,0.1)';
-        });
-        
-        card.addEventListener('mouseleave', () => {
-            card.style.transform = 'translateY(0)';
-            card.style.boxShadow = '0 5px 15px rgba(0,0,0,0.05)';
-        });
-    });
-});
-</script>
+<div class="container py-5">
+    <?php if (!empty($search) || !empty($difficulty)): ?>
+        <div class="mb-4">
+            <h2 class="h4">
+                Найдено курсов: <?= count($courses) ?>
+                <?php if ($search): ?>
+                    по запросу "<?= htmlspecialchars($search) ?>"
+                <?php endif; ?>
+                <?php if ($difficulty): ?>
+                    уровня <?= $difficulty === 'beginner' ? 'начинающий' : ($difficulty === 'intermediate' ? 'средний' : 'продвинутый') ?>
+                <?php endif; ?>
+            </h2>
+            <a href="index.php" class="btn btn-outline-secondary btn-sm">Сбросить фильтры</a>
+        </div>
+    <?php endif; ?>
+
+    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+        <?php if (empty($courses)): ?>
+            <div class="col">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body text-center py-5">
+                        <i class="fas fa-book-open fa-3x text-muted mb-3"></i>
+                        <h3 class="h5">Курсы не найдены</h3>
+                        <p class="text-muted">Попробуйте изменить параметры поиска</p>
+                        <a href="index.php" class="btn btn-primary">Все курсы</a>
+                    </div>
+                </div>
+            </div>
+        <?php else: ?>
+            <?php foreach ($courses as $course): ?>
+                <?php
+                $progress = 0;
+                if (isLoggedIn() && isset($user_progress[$course['id']])) {
+                    $progress = $course['lesson_count'] > 0 
+                        ? round($user_progress[$course['id']] / $course['lesson_count'] * 100) 
+                        : 0;
+                }
+                ?>
+                <div class="col">
+                    <div class="card h-100 border-0 shadow-sm course-card">
+                        <div class="card-img-top bg-light text-center py-4">
+                            <i class="fas fa-<?= htmlspecialchars($course['icon'] ?? 'book') ?> fa-4x text-primary"></i>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <span class="badge bg-<?= 
+                                    $course['difficulty'] === 'beginner' ? 'success' : 
+                                    ($course['difficulty'] === 'intermediate' ? 'warning' : 'danger') 
+                                ?>">
+                                    <?= $course['difficulty'] === 'beginner' ? 'Начинающий' : 
+                                       ($course['difficulty'] === 'intermediate' ? 'Средний' : 'Продвинутый') ?>
+                                </span>
+                                <small class="text-muted">
+                                    <i class="fas fa-users me-1"></i>
+                                    <?= $course['students_count'] ?? 0 ?>
+                                </small>
+                            </div>
+                            <h3 class="h5 card-title"><?= htmlspecialchars($course['title']) ?></h3>
+                            <p class="card-text text-muted"><?= htmlspecialchars($course['description']) ?></p>
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <small class="text-muted">
+                                    <i class="fas fa-book me-1"></i>
+                                    <?= $course['lesson_count'] ?> уроков
+                                </small>
+                                <?php if (isLoggedIn() && $progress > 0): ?>
+                                    <small class="fw-bold">
+                                        <?= $progress ?>% завершено
+                                    </small>
+                                <?php endif; ?>
+                            </div>
+                            <?php if (isLoggedIn() && $progress > 0): ?>
+                                <div class="progress mb-3" style="height: 6px;">
+                                    <div class="progress-bar bg-success" 
+                                         role="progressbar" 
+                                         style="width: <?= $progress ?>%" 
+                                         aria-valuenow="<?= $progress ?>" 
+                                         aria-valuemin="0" 
+                                         aria-valuemax="100"></div>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                        <div class="card-footer bg-white border-0">
+                            <a href="course.php?id=<?= $course['id'] ?>" class="btn btn-primary w-100">
+                                <?php if (isLoggedIn() && $progress > 0): ?>
+                                    <?= $progress == 100 ? 'Повторить курс' : 'Продолжить' ?>
+                                <?php else: ?>
+                                    Начать обучение
+                                <?php endif; ?>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        <?php endif; ?>
+    </div>
+</div>
 
 <?php
-// Подключаем footer
+// Подключение подвала
 include '../includes/footer.php';
 ?>

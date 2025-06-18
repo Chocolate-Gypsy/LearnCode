@@ -1,6 +1,8 @@
 <?php
 require_once '../includes/db_connect.php';
 require_once '../includes/auth_functions.php';
+
+session_start();
 require_once '../admin/admin_functions.php';
 
 session_start();
@@ -41,7 +43,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $lessons = getCourseLessons($courseId);
 
 $pageTitle = "Управление уроками - " . htmlspecialchars($course['title']);
-include '../includes/header.php';
 ?>
 
 <div class="admin-container">

@@ -131,7 +131,7 @@ include '../includes/header.php';
     <div class="profile-sidebar">
         <div class="profile-card">
             <div class="profile-avatar">
-                <img src="/assets/images/avatars/<?= htmlspecialchars($user['profile_picture'] ?? 'default.jpg') ?>" alt="Аватар" id="avatar-preview">
+                <img src="/assets/images/avatars/<?= htmlspecialchars($user['profile_picture'] ?? '../assets/images/avatars/default.png') ?>" alt="Аватар" id="avatar-preview">
                 <input type="file" id="avatar" name="avatar" accept="image/*" style="display: none;">
             </div>
             <h2><?= htmlspecialchars($user['full_name'] ?? $user['username']) ?></h2>

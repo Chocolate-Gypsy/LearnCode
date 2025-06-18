@@ -56,9 +56,21 @@ function getTotalCompletedLessons() {
  */
 function getRecentUsers($limit = 5) {
     global $pdo;
-    $stmt = $pdo->prepare("SELECT id, username, email, created_at FROM users ORDER BY created_at DESC LIMIT ?");
-    $stmt->execute([$limit]);
-    return $stmt->fetchAll();
+    
+    try {
+        // Используем подготовленное выражение с именованным параметром
+        $stmt = $pdo->prepare("SELECT * FROM users ORDER BY created_at DESC LIMIT :limit");
+        
+        // Явно указываем, что это целочисленный параметр
+        $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
+        
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        // Логируем ошибку и возвращаем пустой массив
+        error_log("Error fetching recent users: " . $e->getMessage());
+        return [];
+    }
 }
 
 /**
@@ -66,16 +78,21 @@ function getRecentUsers($limit = 5) {
  */
 function getRecentCourses($limit = 5) {
     global $pdo;
-    $stmt = $pdo->prepare("SELECT c.id, c.title, c.is_active, COUNT(l.id) as lesson_count 
-                          FROM courses c
-                          LEFT JOIN lessons l ON c.id = l.course_id
-                          GROUP BY c.id
-                          ORDER BY c.created_at DESC
-                          LIMIT ?");
-    $stmt->execute([$limit]);
-    return $stmt->fetchAll();
+    try {
+        // Используем подготовленное выражение с именованным параметром
+        $stmt = $pdo->prepare("SELECT * FROM courses ORDER BY created_at DESC LIMIT :limit");
+        
+        // Явно указываем, что это целочисленный параметр
+        $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
+        
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        // Логируем ошибку и возвращаем пустой массив
+        error_log("Error fetching recent users: " . $e->getMessage());
+        return [];
+    }
 }
-
 
 /**
  * Получить все курсы с количеством уроков
@@ -323,4 +340,44 @@ function updateExercisesOrder($orderData) {
         $_SESSION['admin_message'] = 'Ошибка при сохранении порядка: ' . $e->getMessage();
         $_SESSION['admin_message_type'] = 'danger';
     }
+}
+
+
+// В admin_functions.php
+function getAchievementTypes() {
+    global $pdo;
+    return $pdo->query("SELECT * FROM achievement_types")->fetchAll();
+}
+
+function getUserAchievements($user_id) {
+    global $pdo;
+    $stmt = $pdo->prepare("
+        SELECT a.*, at.name, at.icon 
+        FROM achievements a
+        JOIN achievement_types at ON a.achievement_type_id = at.id
+        WHERE a.user_id = ?
+    ");
+    $stmt->execute([$user_id]);
+    return $stmt->fetchAll();
+}
+
+function getUserCoursesCount($user_id) {
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM user_progress WHERE user_id = ?");
+    $stmt->execute([$user_id]);
+    return $stmt->fetchColumn();
+}
+
+function getUserCompletedLessons($user_id) {
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM user_progress WHERE user_id = ? AND completed_at IS NOT NULL");
+    $stmt->execute([$user_id]);
+    return $stmt->fetchColumn();
+}
+
+function getUserXP($user_id) {
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT xp FROM users WHERE id = ?");
+    $stmt->execute([$user_id]);
+    return $stmt->fetchColumn();
 }

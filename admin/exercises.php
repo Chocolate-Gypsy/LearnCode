@@ -1,6 +1,8 @@
 <?php
 require_once '../includes/db_connect.php';
 require_once '../includes/auth_functions.php';
+
+session_start();
 require_once '../admin/admin_functions.php';
 
 session_start();

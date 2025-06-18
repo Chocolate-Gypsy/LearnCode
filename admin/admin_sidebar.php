@@ -41,6 +41,13 @@ if (!isset($_SESSION['user_id'])) {
                     <span>Обзор</span>
                 </a>
             </li>
+
+            <li class="<?= basename($_SERVER['PHP_SELF']) == 'users.php' ? 'active' : '' ?>">
+                <a href="/admin/users.php">
+                    <i class="fas fa-users"></i>
+                    <span>Пользователи</span>
+                </a>
+            </li>
             
             <li class="<?= basename($_SERVER['PHP_SELF']) == 'courses.php' || basename($_SERVER['PHP_SELF']) == 'course_edit.php' ? 'active' : '' ?>">
                 <a href="/admin/courses.php">
@@ -56,12 +63,7 @@ if (!isset($_SESSION['user_id'])) {
                 </a>
             </li>
             
-            <li class="<?= basename($_SERVER['PHP_SELF']) == 'users.php' ? 'active' : '' ?>">
-                <a href="/admin/users.php">
-                    <i class="fas fa-users"></i>
-                    <span>Пользователи</span>
-                </a>
-            </li>
+
             
             <li class="<?= basename($_SERVER['PHP_SELF']) == 'exercises.php' ? 'active' : '' ?>">
                 <a href="/admin/exercises.php">
@@ -74,13 +76,6 @@ if (!isset($_SESSION['user_id'])) {
                 <a href="/admin/achievements.php">
                     <i class="fas fa-trophy"></i>
                     <span>Достижения</span>
-                </a>
-            </li>
-            
-            <li class="<?= basename($_SERVER['PHP_SELF']) == 'settings.php' ? 'active' : '' ?>">
-                <a href="/admin/settings.php">
-                    <i class="fas fa-cog"></i>
-                    <span>Настройки</span>
                 </a>
             </li>
             

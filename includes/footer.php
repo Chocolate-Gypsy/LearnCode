@@ -1,9 +1,8 @@
-        </main>
-        
+
     <footer class="site-footer">
         <div class="footer-container">
             <div class="footer-section about">
-                <h3>About LearnProgramming</h3>
+                <h3>About LearnCode</h3>
                 <p>Our mission is to make programming education accessible, interactive and fun for everyone.</p>
                 <div class="social-links">
                     <a href="#"><i class="fab fa-facebook"></i></a>
@@ -19,21 +18,19 @@
                     <li><a href="/courses/">All Courses</a></li>
                     <li><a href="/about.php">About Us</a></li>
                     <li><a href="/contact.php">Contact</a></li>
-                    <li><a href="/privacy.php">Privacy Policy</a></li>
-                    <li><a href="/terms.php">Terms of Service</a></li>
                 </ul>
             </div>
             
             <div class="footer-section contact">
                 <h3>Contact Us</h3>
-                <p><i class="fas fa-envelope"></i> support@learnprogramming.com</p>
+                <p><i class="fas fa-envelope"></i> support@LearnCode.com</p>
                 <p><i class="fas fa-phone"></i> +1 (123) 456-7890</p>
                 <p><i class="fas fa-map-marker-alt"></i> 123 Coding Street, Dev City, DC 12345</p>
             </div>
         </div>
         
         <div class="footer-bottom">
-            <p>&copy; <?php echo date('Y'); ?> LearnProgramming. All rights reserved.</p>
+            <p>&copy; <?php echo date('Y'); ?> LearnCode. All rights reserved.</p>
         </div>
     </footer>
 

@@ -10,10 +10,9 @@ if (!isAdmin()) {
     exit;
 }
 
-$exerciseId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
-$lessonId = isset($_GET['lesson_id']) ? (int)$_GET['lesson_id'] : 0;
+$exerciseId = $_GET['id'] ?? 0;
+$lessonId = $_GET['lesson_id'] ?? 0;
 
-// Проверка lesson_id для нового упражнения
 if (!$exerciseId && !$lessonId) {
     header('Location: /admin/lessons.php');
     exit;
@@ -28,9 +27,8 @@ $exercise = [
     'lesson_id' => $lessonId
 ];
 
-$options = []; // Для упражнений с выбором ответа
+$options = [];
 
-// Загрузка существующего упражнения
 if ($exerciseId) {
     $stmt = $pdo->prepare("SELECT * FROM exercises WHERE id = ?");
     $stmt->execute([$exerciseId]);
@@ -45,15 +43,13 @@ if ($exerciseId) {
     
     $lessonId = $exercise['lesson_id'];
     
-    // Загрузка вариантов ответа для multiple_choice
     if ($exercise['exercise_type'] === 'multiple_choice') {
-        $stmt = $pdo->prepare("SELECT * FROM exercise_options WHERE exercise_id = ? ORDER BY id");
+        $stmt = $pdo->prepare("SELECT * FROM exercise_options WHERE exercise_id = ?");
         $stmt->execute([$exerciseId]);
         $options = $stmt->fetchAll();
     }
 }
 
-// Получаем данные урока
 $stmt = $pdo->prepare("SELECT l.title, c.title as course_title 
                       FROM lessons l
                       JOIN courses c ON l.course_id = c.id
@@ -61,14 +57,6 @@ $stmt = $pdo->prepare("SELECT l.title, c.title as course_title
 $stmt->execute([$lessonId]);
 $lesson = $stmt->fetch();
 
-if (!$lesson) {
-    $_SESSION['admin_message'] = 'Урок не найден';
-    $_SESSION['admin_message_type'] = 'danger';
-    header('Location: /admin/lessons.php');
-    exit;
-}
-
-// Обработка формы
 $errors = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $exercise['question'] = trim($_POST['question'] ?? '');
@@ -77,33 +65,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $exercise['exercise_type'] = $_POST['exercise_type'] ?? 'multiple_choice';
     $exercise['lesson_id'] = $lessonId;
     
-    // Валидация
-    if (empty($exercise['question'])) {
-        $errors['question'] = 'Вопрос обязателен';
-    }
-    
-    // Валидация для multiple_choice
     if ($exercise['exercise_type'] === 'multiple_choice') {
         $optionTexts = $_POST['option_text'] ?? [];
         $optionCorrect = $_POST['is_correct'] ?? [];
         
-        // Фильтруем пустые варианты
-        $optionTexts = array_filter($optionTexts, function($text) {
-            return !empty(trim($text));
-        });
-        
         if (count($optionTexts) < 2) {
-            $errors['options'] = 'Нужно минимум 2 варианта ответа';
+            $errors['options'] = 'Необходимо минимум 2 варианта ответа';
         }
         
-        $correctCount = count(array_filter($optionCorrect));
+        $correctCount = 0;
+        foreach ($optionCorrect as $correct) {
+            if ($correct) $correctCount++;
+        }
         
         if ($correctCount === 0) {
-            $errors['options'] = 'Нужно выбрать хотя бы один правильный ответ';
+            $errors['options'] = 'Необходимо выбрать хотя бы один правильный ответ';
         }
-    } elseif (empty($exercise['answer'])) {
-        // Валидация ответа для других типов упражнений
-        $errors['answer'] = 'Ответ обязателен';
     }
 
     if (empty($errors)) {
@@ -111,7 +88,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->beginTransaction();
             
             if ($exerciseId) {
-                // Обновление упражнения
                 $stmt = $pdo->prepare("UPDATE exercises SET 
                     question = ?, answer = ?, code_template = ?, 
                     exercise_type = ?, lesson_id = ?
@@ -125,7 +101,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $exerciseId
                 ]);
             } else {
-                // Создание упражнения
                 $stmt = $pdo->prepare("INSERT INTO exercises 
                     (question, answer, code_template, exercise_type, lesson_id) 
                     VALUES (?, ?, ?, ?, ?)");
@@ -137,34 +112,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $exercise['lesson_id']
                 ]);
                 $exerciseId = $pdo->lastInsertId();
-                
-                if (!$exerciseId) {
-                    throw new PDOException("Не удалось создать упражнение");
-                }
             }
             
-            // Обработка вариантов ответа для multiple_choice
             if ($exercise['exercise_type'] === 'multiple_choice') {
-                // Удаляем старые варианты (только для существующего упражнения)
-                if ($exerciseId) {
-                    $stmt = $pdo->prepare("DELETE FROM exercise_options WHERE exercise_id = ?");
-                    $stmt->execute([$exerciseId]);
-                }
+                $stmt = $pdo->prepare("DELETE FROM exercise_options WHERE exercise_id = ?");
+                $stmt->execute([$exerciseId]);
                 
-                // Добавляем новые варианты
                 $optionTexts = $_POST['option_text'] ?? [];
                 $optionCorrect = $_POST['is_correct'] ?? [];
                 
                 foreach ($optionTexts as $index => $text) {
-                    $text = trim($text);
-                    if (!empty($text)) {
+                    if (!empty(trim($text))) {
                         $isCorrect = isset($optionCorrect[$index]) ? 1 : 0;
                         $stmt = $pdo->prepare("INSERT INTO exercise_options 
                             (exercise_id, option_text, is_correct) 
                             VALUES (?, ?, ?)");
                         $stmt->execute([
                             $exerciseId,
-                            $text,
+                            trim($text),
                             $isCorrect
                         ]);
                     }
@@ -178,26 +143,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Location: /admin/exercises.php?lesson_id=' . $lessonId);
             exit;
         } catch (PDOException $e) {
-            $pdo->rollBack();
-            $errors['general'] = 'Ошибка базы данных: ' . $e->getMessage();
-            error_log("DB Error in exercise_edit.php: " . $e->getMessage());
-        }
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    $errors['general'] = 'Произошла ошибка при сохранении. Пожалуйста, попробуйте позже.';
+    error_log("Ошибка БД в exercise_edit.php: " . $e->getMessage());
+}
     }
 }
 
 $pageTitle = $exerciseId ? "Редактирование упражнения" : "Создание упражнения";
 ?>
 
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($pageTitle) ?> | Админ-панель</title>
-    <link rel="stylesheet" href="/assets/css/admin.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-</head>
-<body>
 <div class="admin-container">
     <?php include '../admin/admin_sidebar.php'; ?>
     
@@ -218,7 +175,7 @@ $pageTitle = $exerciseId ? "Редактирование упражнения" :
         </div>
 
         <?php if (!empty($errors['general'])): ?>
-            <div class="alert alert-danger"><?= htmlspecialchars($errors['general']) ?></div>
+            <div class="alert alert-danger"><?= $errors['general'] ?></div>
         <?php endif; ?>
 
         <form method="POST" class="admin-form" novalidate>
@@ -237,19 +194,17 @@ $pageTitle = $exerciseId ? "Редактирование упражнения" :
                     htmlspecialchars($exercise['question']) 
                 ?></textarea>
                 <?php if (!empty($errors['question'])): ?>
-                    <div class="error-message"><?= htmlspecialchars($errors['question']) ?></div>
+                    <div class="error-message"><?= $errors['question'] ?></div>
                 <?php endif; ?>
             </div>
 
-            <!-- Блок для разных типов упражнений -->
             <div class="exercise-type-content">
-                <!-- Multiple Choice -->
                 <div class="exercise-type-panel" id="multiple_choice_panel" 
                      style="<?= $exercise['exercise_type'] !== 'multiple_choice' ? 'display: none;' : '' ?>">
                     <h3>Варианты ответа</h3>
                     
                     <?php if (!empty($errors['options'])): ?>
-                        <div class="alert alert-danger"><?= htmlspecialchars($errors['options']) ?></div>
+                        <div class="alert alert-danger"><?= $errors['options'] ?></div>
                     <?php endif; ?>
                     
                     <div id="options-container">
@@ -257,13 +212,17 @@ $pageTitle = $exerciseId ? "Редактирование упражнения" :
                             <?php foreach ($options as $index => $option): ?>
                             <div class="option-item">
                                 <div class="form-group">
-                                    <label>Вариант <?= $index + 1 ?></label>
+                                    <label for="option_<?= $index ?>">Вариант <?= $index + 1 ?></label>
                                     <div class="option-input-group">
-                                        <input type="text" name="option_text[]" 
+                                        <input type="text" 
+                                               id="option_<?= $index ?>" 
+                                               name="option_text[]" 
                                                value="<?= htmlspecialchars($option['option_text']) ?>" 
-                                               placeholder="Текст варианта" class="option-text" required>
+                                               class="option-text">
                                         <label class="checkbox-label option-correct">
-                                            <input type="checkbox" name="is_correct[]" value="<?= $index ?>" 
+                                            <input type="checkbox" 
+                                                   name="is_correct[]" 
+                                                   value="<?= $index ?>" 
                                                    <?= $option['is_correct'] ? 'checked' : '' ?>>
                                             <span class="checkmark"></span>
                                             Правильный
@@ -276,14 +235,18 @@ $pageTitle = $exerciseId ? "Редактирование упражнения" :
                             </div>
                             <?php endforeach; ?>
                         <?php else: ?>
-                            <!-- Пустые варианты по умолчанию -->
                             <div class="option-item">
                                 <div class="form-group">
-                                    <label>Вариант 1</label>
+                                    <label for="option_0">Вариант 1</label>
                                     <div class="option-input-group">
-                                        <input type="text" name="option_text[]" placeholder="Текст варианта" class="option-text" required>
+                                        <input type="text" 
+                                               id="option_0" 
+                                               name="option_text[]" 
+                                               class="option-text">
                                         <label class="checkbox-label option-correct">
-                                            <input type="checkbox" name="is_correct[]" value="0" checked>
+                                            <input type="checkbox" 
+                                                   name="is_correct[]" 
+                                                   value="0">
                                             <span class="checkmark"></span>
                                             Правильный
                                         </label>
@@ -295,11 +258,16 @@ $pageTitle = $exerciseId ? "Редактирование упражнения" :
                             </div>
                             <div class="option-item">
                                 <div class="form-group">
-                                    <label>Вариант 2</label>
+                                    <label for="option_1">Вариант 2</label>
                                     <div class="option-input-group">
-                                        <input type="text" name="option_text[]" placeholder="Текст варианта" class="option-text" required>
+                                        <input type="text" 
+                                               id="option_1" 
+                                               name="option_text[]" 
+                                               class="option-text">
                                         <label class="checkbox-label option-correct">
-                                            <input type="checkbox" name="is_correct[]" value="0">
+                                            <input type="checkbox" 
+                                                   name="is_correct[]" 
+                                                   value="1">
                                             <span class="checkmark"></span>
                                             Правильный
                                         </label>
@@ -317,7 +285,6 @@ $pageTitle = $exerciseId ? "Редактирование упражнения" :
                     </button>
                 </div>
                 
-                <!-- Code -->
                 <div class="exercise-type-panel" id="code_panel" 
                      style="<?= $exercise['exercise_type'] !== 'code' ? 'display: none;' : '' ?>">
                     <div class="form-group">
@@ -326,25 +293,19 @@ $pageTitle = $exerciseId ? "Редактирование упражнения" :
                             htmlspecialchars($exercise['code_template']) 
                         ?></textarea>
                     </div>
-                    <div class="form-group">
-                        <label for="answer">Правильный ответ *</label>
-                        <input type="text" id="answer" name="answer" 
-                               value="<?= htmlspecialchars($exercise['answer']) ?>" required>
-                        <?php if (!empty($errors['answer'])): ?>
-                            <div class="error-message"><?= htmlspecialchars($errors['answer']) ?></div>
-                        <?php endif; ?>
-                    </div>
                 </div>
                 
-                <!-- Fill Blank -->
                 <div class="exercise-type-panel" id="fill_blank_panel" 
                      style="<?= $exercise['exercise_type'] !== 'fill_blank' ? 'display: none;' : '' ?>">
                     <div class="form-group">
                         <label for="answer">Правильный ответ *</label>
-                        <input type="text" id="answer" name="answer" 
-                               value="<?= htmlspecialchars($exercise['answer']) ?>" required>
+                        <input type="text" 
+                               id="answer" 
+                               name="answer" 
+                               value="<?= htmlspecialchars($exercise['answer']) ?>" 
+                               <?= $exercise['exercise_type'] === 'multiple_choice' ? 'class="hidden-field"' : 'required' ?>>
                         <?php if (!empty($errors['answer'])): ?>
-                            <div class="error-message"><?= htmlspecialchars($errors['answer']) ?></div>
+                            <div class="error-message"><?= $errors['answer'] ?></div>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -359,161 +320,251 @@ $pageTitle = $exerciseId ? "Редактирование упражнения" :
     </main>
 </div>
 
-<!-- Подключение CodeMirror для редактирования кода -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/dracula.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/htmlmixed/htmlmixed.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/javascript/javascript.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/css/css.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/php/php.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
 
 <script>
-// Переключение типов упражнений
-document.getElementById('exercise_type').addEventListener('change', function() {
-    document.querySelectorAll('.exercise-type-panel').forEach(panel => {
-        panel.style.display = 'none';
-    });
-    document.getElementById(this.value + '_panel').style.display = 'block';
+// Инициализация при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    initializeExerciseTypeHandler();
+    initializeOptionManagement();
+    initializeCodeEditor();
     updateFieldRequirements();
 });
 
-// Управление вариантами ответа
-let optionCounter = <?= empty($options) ? count($options) : 2 ?>;
+/**
+ * Обработчик изменения типа упражнения
+ */
+function initializeExerciseTypeHandler() {
+    const exerciseTypeSelect = document.getElementById('exercise_type');
+    
+    if (!exerciseTypeSelect) return;
+    
+    exerciseTypeSelect.addEventListener('change', function() {
+        // Скрыть все панели
+        document.querySelectorAll('.exercise-type-panel').forEach(panel => {
+            panel.style.display = 'none';
+        });
+        
+        // Показать выбранную панель
+        const selectedPanel = document.getElementById(this.value + '_panel');
+        if (selectedPanel) {
+            selectedPanel.style.display = 'block';
+        }
+        
+        updateFieldRequirements();
+    });
+}
 
-document.getElementById('add-option').addEventListener('click', function() {
-    optionCounter++;
-    const newOption = document.createElement('div');
-    newOption.className = 'option-item';
-    newOption.innerHTML = `
+/**
+ * Управление вариантами ответов (для множественного выбора)
+ */
+function initializeOptionManagement() {
+    const optionsContainer = document.getElementById('options-container');
+    if (!optionsContainer) return;
+    
+    let optionCounter = optionsContainer.querySelectorAll('.option-item').length || 2;
+    
+    // Добавление нового варианта
+    document.getElementById('add-option')?.addEventListener('click', function() {
+        optionCounter++;
+        const newOption = createOptionElement(optionCounter);
+        optionsContainer.appendChild(newOption);
+    });
+    
+    // Удаление варианта
+    optionsContainer.addEventListener('click', function(e) {
+        if (e.target.closest('.remove-option')) {
+            const optionItem = e.target.closest('.option-item');
+            const allOptions = optionsContainer.querySelectorAll('.option-item');
+            
+            if (allOptions.length <= 2) {
+                showAlert('Необходимо минимум 2 варианта ответа');
+                return;
+            }
+            
+            optionItem.remove();
+            renumberOptions();
+            optionCounter = optionsContainer.querySelectorAll('.option-item').length;
+        }
+    });
+}
+
+/**
+ * Создает элемент варианта ответа
+ */
+function createOptionElement(index) {
+    const div = document.createElement('div');
+    div.className = 'option-item';
+    div.innerHTML = `
         <div class="form-group">
-            <label>Вариант ${optionCounter}</label>
+            <label for="option_${index}">Вариант ${index}</label>
             <div class="option-input-group">
-                <input type="text" name="option_text[]" placeholder="Текст варианта" class="option-text" required>
+                <input type="text" 
+                       id="option_${index}" 
+                       name="option_text[]" 
+                       class="option-text"
+                       required
+                       placeholder="Введите текст варианта">
                 <label class="checkbox-label option-correct">
-                    <input type="checkbox" name="is_correct[]" value="1"> <!-- Всегда value="1" -->
+                    <input type="checkbox" 
+                           name="is_correct[]" 
+                           value="${index - 1}"
+                           class="correct-option-checkbox">
                     <span class="checkmark"></span>
                     Правильный
                 </label>
-                <button type="button" class="btn btn-sm btn-danger remove-option">
+                <button type="button" class="btn btn-sm btn-danger remove-option" aria-label="Удалить вариант">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
         </div>
     `;
-    document.getElementById('options-container').appendChild(newOption);
-});
+    return div;
+}
 
-document.addEventListener('click', function(e) {
-    if (e.target.classList.contains('remove-option')) {
-        const optionItem = e.target.closest('.option-item');
-        if (document.querySelectorAll('.option-item').length > 2) {
-            optionItem.remove();
-            // Перенумеруем только labels, значения чекбоксов не меняем
-            document.querySelectorAll('.option-item').forEach((item, index) => {
-                item.querySelector('label').textContent = `Вариант ${index + 1}`;
-            });
-            optionCounter = document.querySelectorAll('.option-item').length;
-        } else {
-            alert('Должно быть минимум 2 варианта ответа');
-        }
-    }
-});
-
-// Инициализация редактора кода
-let editor;
-if (document.getElementById('code_template')) {
-    editor = CodeMirror.fromTextArea(document.getElementById('code_template'), {
-        lineNumbers: true,
-        mode: 'javascript',
-        theme: 'dracula',
-        indentUnit: 4,
-        lineWrapping: true,
-        autoCloseBrackets: true,
-        matchBrackets: true
+/**
+ * Перенумерация вариантов после удаления
+ */
+function renumberOptions() {
+    const optionsContainer = document.getElementById('options-container');
+    if (!optionsContainer) return;
+    
+    optionsContainer.querySelectorAll('.option-item').forEach((item, index) => {
+        const newIndex = index + 1;
+        item.querySelector('label').textContent = `Вариант ${newIndex}`;
+        item.querySelector('label').setAttribute('for', `option_${newIndex}`);
+        
+        const textInput = item.querySelector('input[type="text"]');
+        textInput.id = `option_${newIndex}`;
+        textInput.name = `option_text[]`;
+        
+        const checkbox = item.querySelector('input[type="checkbox"]');
+        checkbox.value = index;
+        checkbox.name = `is_correct[]`;
     });
 }
 
-// Динамическое управление атрибутом required
+/**
+ * Обновление обязательных полей в зависимости от типа упражнения
+ */
 function updateFieldRequirements() {
-    const type = document.getElementById('exercise_type').value;
+    const type = document.getElementById('exercise_type')?.value;
     const answerField = document.getElementById('answer');
     
+    if (!answerField) return;
+    
     if (type === 'multiple_choice') {
-        answerField?.removeAttribute('required');
-        answerField?.classList.add('hidden-field');
+        answerField.removeAttribute('required');
+        answerField.classList.add('hidden-field');
     } else {
-        answerField?.setAttribute('required', 'required');
-        answerField?.classList.remove('hidden-field');
+        answerField.setAttribute('required', 'required');
+        answerField.classList.remove('hidden-field');
     }
 }
 
-// Инициализация при загрузке
-document.addEventListener('DOMContentLoaded', function() {
-    updateFieldRequirements();
+/**
+ * Инициализация редактора кода (если есть)
+ */
+function initializeCodeEditor() {
+    const codeTemplateTextarea = document.getElementById('code_template');
+    if (!codeTemplateTextarea) return;
     
-    // Валидация формы перед отправкой
-document.querySelector('.admin-form').addEventListener('submit', function(e) {
-    const exerciseType = document.getElementById('exercise_type').value;
-    let isValid = true;
-    
-    if (exerciseType === 'multiple_choice') {
-        const checkedOptions = document.querySelectorAll('input[name="is_correct[]"]:checked');
-        
-        if (checkedOptions.length === 0) {
-            alert('Нужно выбрать хотя бы один правильный ответ');
-            isValid = false;
+    const editor = CodeMirror.fromTextArea(codeTemplateTextarea, {
+        lineNumbers: true,
+        mode: 'javascript',
+        theme: 'default',
+        indentUnit: 4,
+        extraKeys: {
+            'Tab': function(cm) {
+                cm.replaceSelection('    ', 'end');
+            }
         }
-    }
+    });
     
-    if (!isValid) {
+    // Сохраняем ссылку на редактор для использования в форме
+    window.codeEditor = editor;
+}
+
+/**
+ * Валидация формы перед отправкой
+ */
+document.querySelector('.admin-form')?.addEventListener('submit', function(e) {
+    const exerciseType = document.getElementById('exercise_type')?.value;
+    
+    if (!validateExerciseForm(exerciseType)) {
         e.preventDefault();
     }
 });
-        // Проверка обязательных полей
-        if (document.getElementById('question').value.trim() === '') {
-            alert('Поле "Вопрос/Задание" обязательно для заполнения');
-            isValid = false;
-        }
-        
-        // Проверка для разных типов упражнений
-        if (exerciseType === 'multiple_choice') {
-            const options = document.querySelectorAll('input[name="option_text[]"]');
-            const checkedOptions = document.querySelectorAll('input[name="is_correct[]"]:checked');
-            
-            // Проверка на пустые варианты
-            options.forEach(option => {
-                if (option.value.trim() === '') {
-                    alert('Все варианты ответа должны быть заполнены');
-                    isValid = false;
-                    return;
-                }
-            });
-            
-            if (options.length < 2) {
-                alert('Нужно минимум 2 варианта ответа');
-                isValid = false;
-            } else if (checkedOptions.length === 0) {
-                alert('Нужно выбрать хотя бы один правильный ответ');
-                isValid = false;
-            }
-        } else if (document.getElementById('answer').value.trim() === '') {
-            alert('Поле "Правильный ответ" обязательно для заполнения');
-            isValid = false;
-        }
-        
-        if (!isValid) {
-            e.preventDefault();
-            return false;
-        }
-        
-        // Для типа "code" синхронизируем содержимое редактора с textarea
-        if (exerciseType === 'code' && typeof editor !== 'undefined') {
-            editor.save();
-        }
-    });
 
+/**
+ * Валидация формы в зависимости от типа упражнения
+ */
+function validateExerciseForm(exerciseType) {
+    if (exerciseType === 'multiple_choice') {
+        return validateMultipleChoiceForm();
+    }
+    
+    if (exerciseType === 'code' && window.codeEditor) {
+        window.codeEditor.save();
+    }
+    
+    return true;
+}
+
+/**
+ * Валидация формы с множественным выбором
+ */
+function validateMultipleChoiceForm() {
+    const options = document.querySelectorAll('input[name="option_text[]"]');
+    const checkedOptions = document.querySelectorAll('input[name="is_correct[]"]:checked');
+    
+    // Проверка минимального количества вариантов
+    if (options.length < 2) {
+        showAlert('Необходимо минимум 2 варианта ответа');
+        return false;
+    }
+    
+    // Проверка заполненности всех вариантов
+    let emptyOptions = Array.from(options).filter(opt => !opt.value.trim());
+    if (emptyOptions.length > 0) {
+        showAlert('Все варианты должны содержать текст');
+        // Подсветка пустых полей
+        emptyOptions.forEach(opt => {
+            opt.classList.add('is-invalid');
+            opt.addEventListener('input', function() {
+                if (this.value.trim()) this.classList.remove('is-invalid');
+            });
+        });
+        return false;
+    }
+    
+    // Проверка выбранных правильных ответов
+    if (checkedOptions.length === 0) {
+        showAlert('Необходимо выбрать хотя бы один правильный ответ');
+        return false;
+    }
+    
+    return true;
+}
+
+/**
+ * Показ уведомления
+ */
+function showAlert(message) {
+    // Можно заменить на более красивый Toast или модальное окно
+    alert(message);
+}
+
+/**
+ * Делегирование событий для динамически добавляемых элементов
+ */
+document.addEventListener('input', function(e) {
+    // Убираем класс ошибки при вводе
+    if (e.target.classList.contains('is-invalid') && e.target.value.trim()) {
+        e.target.classList.remove('is-invalid');
+    }
+});
 </script>
-</body>
-</html>

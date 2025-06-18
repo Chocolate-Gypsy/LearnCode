@@ -2,6 +2,8 @@
 require_once '../includes/db_connect.php';
 require_once '../includes/auth_functions.php';
 
+session_start();
+
 header('Content-Type: application/json');
 
 // Разрешаем CORS запросы
